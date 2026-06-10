@@ -161,6 +161,10 @@ struct sf_priv {
 #define glblPatchEnableAck					0xC45E
 #define glblPatchInit						0xC460
 
+#define PHY_INT_MASK						0x0250
+#define PHY_INT_STATUS						0x0252
+#define PHY_INT_CLEAR						0x0254
+
 enum siflower_port_type_e
 {
 	SFPHY_PORT_TYPE_UTP,
@@ -989,7 +993,7 @@ static int sf1240_load_patch(struct phy_device *phydev)
 		return ret;
 	}
 
-	for (offset; offset < fw->size; offset++) {
+	for (; offset < fw->size; offset++) {
 		val = fw->data[offset];
 		ret = siflower_phy_ext_write(phydev, 0xC800 + offset, val);
 		if (ret < 0) {
@@ -1081,7 +1085,7 @@ static int sf1240_load_patch_enable(struct phy_device *phydev)
 
 int sf1240_config_init(struct phy_device *phydev)
 {
-	int ret, val;
+	int ret, val, chip_version;
 	unsigned int patchenable_val, patchenableack_val;
 
 #if (KERNEL_VERSION(5, 4, 0) > LINUX_VERSION_CODE)
@@ -1094,7 +1098,8 @@ int sf1240_config_init(struct phy_device *phydev)
 
 	patchenable_val = siflower_phy_ext_read(phydev, glblPatchEnable);
 	patchenableack_val = siflower_phy_ext_read(phydev, glblPatchEnableAck);	//avoid patch load more than once
-	if (phydev->phy_id == SF1240_PHY_ID && ((patchenable_val != 0x85) || (patchenableack_val != 0x85))) {
+	chip_version = siflower_phy_ext_read(phydev, 0xc419);
+	if (phydev->phy_id == SF1240_PHY_ID && ((patchenable_val != 0x85) || (patchenableack_val != 0x85)) && chip_version == 2) {
 		ret = sf1240_load_patch_enable(phydev);
 		if (ret < 0)
 			return ret;
@@ -1109,7 +1114,6 @@ int sf1240_config_init(struct phy_device *phydev)
 		linkmode_mod_bit(ETHTOOL_LINK_MODE_1000baseT_Full_BIT,
 				phydev->advertising, ESTATUS_1000_TFULL);
 #endif
-
 
 	/*Disable auto speed down*/
 	val = phy_read(phydev, 0x13);
@@ -1278,8 +1282,8 @@ static ssize_t sf_ext_reg_op(struct file *file,
 		return -EFAULT;
 
 	if (buf[0] == 'w') {
-		if (sscanf(buf, "w %x %x", &reg, &val) == -1)
-			return count;
+		if (sscanf(buf, "w %x %x", &reg, &val) != 2)
+			return -EINVAL;
 
 		pr_notice("write ext reg=0x%x, val=0x%x\n", reg, val);
 		ret = sf1211f_phy_ext_write(phydev, reg, val);
@@ -1291,8 +1295,8 @@ static ssize_t sf_ext_reg_op(struct file *file,
 		val = sf1211f_phy_ext_read(phydev, reg);
 		pr_notice("read back ext reg=0x%x, val=0x%x\n", reg, val);
 	} else if (buf[0] == 'r') {
-		if (sscanf(buf, "r %x", &reg) == -1)
-			return count;
+		if (sscanf(buf, "r %x", &reg) != 1)
+			return -EINVAL;
 
 		val = sf1211f_phy_ext_read(phydev, reg);
 		pr_notice("read reg=0x%x, val=0x%x\n", reg, val);
@@ -1426,6 +1430,33 @@ static int sf_debugfs_init(struct phy_device *phydev)
 	return ret;
 }
 
+static int sf1211_config_intr(struct phy_device *phydev)
+{
+	int val;
+
+	val = siflower_phy_ext_read(phydev, PHY_INT_MASK);
+	if (val < 0)
+		return val;
+
+	if (phydev->interrupts == PHY_INTERRUPT_ENABLED)
+		val |= 0x40;
+	else
+		val &= ~0x40;
+
+	return siflower_phy_ext_write(phydev, PHY_INT_MASK, val);
+}
+
+static int sf1211_ack_interrupt(struct phy_device *phydev)
+{
+	int ret;
+
+	ret = siflower_phy_ext_read(phydev, PHY_INT_STATUS);
+	if (ret < 0)
+		return ret;
+
+	return siflower_phy_ext_write(phydev, PHY_INT_CLEAR, ret);
+}
+
 static int sf1xxx_probe(struct phy_device *phydev)
 {
 	struct device *dev = phydev_dev(phydev);
@@ -1465,27 +1496,28 @@ static void sf1xxx_remove(struct phy_device *phydev)
 
 static struct phy_driver sf_phy_drivers[] = {
 	{
-		.phy_id             = SF1211F_PHY_ID,
-		.phy_id_mask        = SIFLOWER_PHY_ID_MASK,
-		.name               = "SF1211F Gigabit Ethernet",
-		.features           = PHY_GBIT_FEATURES,
-		.flags              = PHY_POLL,
-		.probe              = sf1xxx_probe,
-		.remove             = sf1xxx_remove,
-		.config_init        = sf1211f_config_init,
-		.config_aneg        = sf1211f_config_aneg,
+		.phy_id             	= SF1211F_PHY_ID,
+		.phy_id_mask        	= SIFLOWER_PHY_ID_MASK,
+		.name               	= "SF1211F Gigabit Ethernet",
+		.features           	= PHY_GBIT_FEATURES,
+		.config_intr		= sf1211_config_intr,
+		.ack_interrupt  	= sf1211_ack_interrupt,
+		.probe              	= sf1xxx_probe,
+		.remove             	= sf1xxx_remove,
+		.config_init        	= sf1211f_config_init,
+		.config_aneg        	= sf1211f_config_aneg,
 #if (KERNEL_VERSION(3, 14, 79) < LINUX_VERSION_CODE)
-		.aneg_done          = sf1211f_aneg_done,
+		.aneg_done          	= sf1211f_aneg_done,
 #endif
 #if (KERNEL_VERSION(4, 12, 0) <= LINUX_VERSION_CODE)
-		.write_mmd          = genphy_write_mmd_unsupported,
-		.read_mmd           = genphy_read_mmd_unsupported,
+		.write_mmd          	= genphy_write_mmd_unsupported,
+		.read_mmd           	= genphy_read_mmd_unsupported,
 #endif
-		.suspend            = genphy_suspend,
-		.resume             = genphy_resume,
+		.suspend            	= genphy_suspend,
+		.resume             	= genphy_resume,
 #if SIFLOWER_PHY_WOL_FEATURE_ENABLE
-		.get_wol            = &siflower_get_wol,
-		.set_wol            = &siflower_set_wol,
+		.get_wol            	= &siflower_get_wol,
+		.set_wol            	= &siflower_set_wol,
 #endif
 	},
 

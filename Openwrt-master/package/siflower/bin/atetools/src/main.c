@@ -1838,7 +1838,7 @@ int32_t get_rssi_from_factory(void)
 			result[i] = data[i];
 	}
 
-	printf("get rssi offset: HB2=%d  HB1=%d  LB2=%d  LB1=%d\n", result[0], result[1], result[2], result[3]);
+	printf("get rssi offset: HB1=%d  HB2=%d  LB1=%d  LB2=%d\n", result[0], result[1], result[2], result[3]);
 	return 0;
 }
 
@@ -3502,7 +3502,6 @@ int save_rssi_offset(char *rssi)
 {
 	struct iwreq wrq;
 	struct sfcfghdr tmp;
-	char buf[8] = "";
 
 	memset(&wrq, 0, sizeof(struct iwreq));
 	memset(&tmp, 0, sizeof(struct sfcfghdr));
@@ -3520,13 +3519,13 @@ int save_rssi_offset(char *rssi)
 	tmp.magic_no    = SFCFG_MAGIC_NO;
 	tmp.comand_type = SFCFG_CMD_ATE_SAVE_DATA_TO_FLASH;
 	tmp.comand_id   = SFCFG_CMD_ATE_SAVE_DATA_TO_FLASH;
-	tmp.length      = 4;
+	tmp.length      = 2;
 	tmp.sequence    = 1;
 
-	sprintf(buf, "%02x%02x", rssi[0], rssi[1]);
 	sprintf(tmp.data, "%d", 182);
-	memcpy(&tmp.data[4], buf, tmp.length);
-	printf("tmp.data= %s-----rssi lb-----\n", tmp.data);
+	tmp.data[4] = (char)rssi[0];
+	tmp.data[5] = (char)rssi[1];
+	printf("offset= %s-----hb rssi offset hb1=%02x hb2=%02x-----\n", tmp.data, (char)tmp.data[4], (char)tmp.data[5]);
 
 	wrq.u.data.pointer = (caddr_t)&tmp;
 	wrq.u.data.length = sizeof(struct sfcfghdr) - sizeof(((struct sfcfghdr *)0)->data) + tmp.length + 4;
@@ -3536,10 +3535,10 @@ int save_rssi_offset(char *rssi)
 		return -1;
 	}
 
-	sprintf(buf, "%02x%02x", rssi[2], rssi[3]);
 	sprintf(tmp.data, "%d", 184);
-	memcpy(&tmp.data[4], buf, tmp.length);
-	printf("tmp.data= %s-----rssi hb-----\n", tmp.data);
+	tmp.data[4] = (char)rssi[2];
+	tmp.data[5] = (char)rssi[3];
+	printf("offset= %s-----lb rssi offset lb1=%02x lb2=%02x-----\n", tmp.data, (char)tmp.data[4], (char)tmp.data[5]);
 
 	wrq.u.data.pointer = (caddr_t)&tmp;
 	wrq.u.data.length = sizeof(struct sfcfghdr) - sizeof(((struct sfcfghdr *)0)->data) + tmp.length + 4;
@@ -4445,7 +4444,7 @@ int32_t main(int32_t argc, char *argv[])
 						case TYPE_RSSI_OFFSET:
 							if (!parse_rssi_offset(argv[4], value, length)) {
 								printf("--- invalid RSSI_OFFSET format (expected four decimal numbers between -127 and 127) ---\n");
-								printf("--- Example: 15,15,-15,-15 ---\n");
+								printf("--- Example: HB1,HB2,LB1,LB2 <==> 15,15,-15,-15 ---\n");
 								return -1;
 							}
 							break;
@@ -4491,7 +4490,7 @@ int32_t main(int32_t argc, char *argv[])
 				}
 			}
 		} else if (strcmp(argv[2], "rssi") == 0) {
-			/* ate_cmd save rssi [lb1] [lb2] [hb1] [hb2]
+			/* ate_cmd save rssi [hb1] [hb2] [lb1] [lb2]
 			 * value: use decimal number
 			 */
 			//get rssi
