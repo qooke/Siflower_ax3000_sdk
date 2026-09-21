@@ -199,7 +199,7 @@ band_reload_fmac(){
 			uci commit wireless
 		fi
 		check_wifi_config  $lb_radio
-		wait_wlan_up $lb_radio
+		wait_wlan_up radio0
 	}
 	[ hb = "$band" ] && {
 		if [ "$hb_disabled" = "1" ]; then
@@ -212,7 +212,7 @@ band_reload_fmac(){
 			uci commit wireless
 		fi
 		check_wifi_config  $hb_radio
-		wait_wlan_up $hb_radio
+		wait_wlan_up radio0
 	}
 
 	if [ -z "$band" ] || [ "$band" = "all" ]; then

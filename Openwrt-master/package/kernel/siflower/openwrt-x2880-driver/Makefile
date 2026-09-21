@@ -126,6 +126,7 @@ endif
 	cp $(PKG_BUILD_DIR)/config/siwifi_whitelist_hb.ini $(1)/lib/firmware/
 	cp $(PKG_BUILD_DIR)/config/txp_offset_sleep.ini $(1)/lib/firmware/
 	cp $(PKG_BUILD_DIR)/config/txp_offset_low.ini $(1)/lib/firmware/
+	cp $(PKG_BUILD_DIR)/config/siwifi_fem_ctrl.ini $(1)/lib/firmware/
 	cp $(PKG_BUILD_DIR)/config/la_diags/*.txt $(1)/lib/firmware/
 
 ifdef CONFIG_PACKAGE_SFUMAC_RF_VERSION_1
